@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roleta Interativa Deluxe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        /* Transição suave de rotação da roleta */
+        .wheel-spin {
+            transition: transform 4.5s cubic-bezier(0.08, 0.82, 0.17, 1);
+        }
+
+        /* Animação de batida do ponteiro durante o giro */
+        @keyframes tickPointer {
+            0%, 100% { transform: translateX(-50%) rotate(0deg); }
+            50% { transform: translateX(-50%) rotate(-22deg); }
+        }
+
+        .pointer-animating {
+            animation: tickPointer 0.08s infinite;
+        }
+
+        /* Animação de brilho do cartão vencedor */
+        @keyframes winnerPulse {
+            0%, 100% { 
+                box-shadow: 0 0 25px rgba(236, 72, 153, 0.6), inset 0 0 20px rgba(236, 72, 153, 0.4);
+                transform: scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 50px rgba(168, 85, 247, 0.95), inset 0 0 30px rgba(168, 85, 247, 0.6);
+                transform: scale(1.03);
+            }
+        }
+
+        .winner-card-anim {
+            animation: winnerPulse 1.2s infinite ease-in-out;
+        }
+
+        /* Brilho de fundo contínuo */
+        @keyframes wheelGlow {
+            0%, 100% { filter: drop-shadow(0 0 20px rgba(168, 85, 247, 0.4)); }
+            50% { filter: drop-shadow(0 0 40px rgba(236, 72, 153, 0.7)); }
+        }
+
+        .wheel-container-glow {
+            animation: wheelGlow 3.5s infinite ease-in-out;
+        }
+
+        /* Barra de rolagem personalizada */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(168, 85, 247, 0.5);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(236, 72, 153, 0.8);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between font-sans overflow-x-hidden selection:bg-purple-500 selection:text-white">
+
+    <!-- Cabeçalho -->
+    <header class="p-4 md:p-5 border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 shadow-xl">
+        <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/30">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-300 tracking-tight">
+                        Roleta de Nomes Deluxe
+                    </h1>
+                    <p class="text-slate-400 text-xs">Gire a roleta e divirta-se com o resultado!</p>
+                </div>
+            </div>
+            <div id="roundBadge" class="bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/40 px-4 py-1.5 rounded-full text-xs font-black tracking-wider uppercase">
+                Rodada 1
+            </div>
+        </div>
+    </header>
+
+    <!-- Contentor Principal -->
+    <main class="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start relative">
+        
+        <!-- Luzes de Fundo -->
+        <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/15 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-600/15 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- Coluna Esquerda: Área da Roleta Interativa (7 Colunas) -->
+        <div class="lg:col-span-7 flex flex-col items-center justify-center bg-slate-900/60 border border-slate-800 rounded-3xl p-6 shadow-2xl backdrop-blur-xl relative">
+            
+            <!-- Estrutura da Roleta -->
+            <div class="relative my-2 flex items-center justify-center wheel-container-glow">
+                
+                <!-- Ponteiro Clássico em Triângulo/Seta -->
+                <div id="pointer" class="absolute -top-5 left-1/2 -translate-x-1/2 z-20 w-8 h-10 flex items-center justify-center filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)]">
+                    <svg class="w-8 h-10 text-amber-400 fill-current" viewBox="0 0 24 32">
+                        <path d="M12 32 L0 0 L24 0 Z" />
+                    </svg>
+                </div>
+
+                <!-- Disco da Roleta -->
+                <div id="wheel" class="wheel-spin w-72 h-72 sm:w-80 sm:h-80 md:w-96 md:h-96 rounded-full border-8 border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.9)] relative overflow-hidden bg-slate-950">
+                    <svg id="wheelSvg" class="w-full h-full" viewBox="0 0 100 100">
+                        <!-- Fatias geradas via JavaScript -->
+                    </svg>
+                </div>
+
+                <!-- Botão Central Decorativo -->
+                <div class="absolute w-14 h-14 md:w-20 md:h-20 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-4 border-slate-600 rounded-full z-10 flex items-center justify-center shadow-2xl">
+                    <div class="w-4 h-4 md:w-6 md:h-6 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 animate-ping"></div>
+                </div>
+            </div>
+
+            <!-- Cartão de Resultado -->
+            <div id="resultCard" class="w-full mt-6 p-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-center transition-all duration-300">
+                <span id="statusLabel" class="text-xs text-slate-400 font-mono tracking-wider uppercase">Aguardando Giro</span>
+                <div id="resultText" class="text-3xl md:text-4xl font-black text-white tracking-wide mt-1 min-h-[48px] flex items-center justify-center">
+                    - - -
+                </div>
+            </div>
+
+            <!-- Botões Principais de Ação -->
+            <div class="w-full mt-5 flex gap-3">
+                <button id="spinBtn" onclick="spinWheel()" class="flex-1 bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 hover:from-pink-500 hover:via-purple-500 hover:to-indigo-500 text-white font-black py-4 px-6 rounded-2xl shadow-[0_0_30px_rgba(236,72,153,0.4)] transition duration-200 active:scale-95 flex items-center justify-center gap-2 text-lg">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    GIRAR ROLETA
+                </button>
+                <button onclick="resetGame()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-5 rounded-2xl border border-slate-700 transition active:scale-95 text-xs">
+                    Reiniciar
+                </button>
+            </div>
+
+        </div>
+
+        <!-- Coluna Direita: Painel do Gerenciador de Nomes (5 Colunas) -->
+        <div class="lg:col-span-5 bg-slate-900/60 border border-slate-800 rounded-3xl p-5 md:p-6 shadow-2xl backdrop-blur-xl flex flex-col h-full">
+            
+            <h2 class="text-lg font-bold text-slate-200 mb-1 flex items-center gap-2">
+                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                Gerenciador de Nomes
+            </h2>
+            <p class="text-xs text-slate-400 mb-4">Adicione ou remova participantes da roleta em tempo real.</p>
+
+            <!-- Campo para Adicionar Nome -->
+            <div class="flex gap-2 mb-4">
+                <input type="text" id="nameInput" placeholder="Digite um novo nome..." onkeydown="if(event.key === 'Enter') addName()" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500 transition">
+                <button onclick="addName()" class="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold px-4 py-2.5 rounded-xl transition active:scale-95 text-sm flex items-center justify-center">
+                    Adicionar
+                </button>
+            </div>
+
+            <!-- Lista de Nomes Ativos -->
+            <div class="flex-1 min-h-[220px] max-h-[360px] bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3 overflow-y-auto">
+                <div class="flex items-center justify-between mb-2 pb-2 border-b border-slate-800 px-1">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nomes Ativos</span>
+                    <span id="nameCount" class="text-xs font-bold text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-md">16 Nomes</span>
+                </div>
+                <ul id="namesList" class="space-y-2">
+                    <!-- Nomes inseridos dinamicamente pelo JS -->
+                </ul>
+            </div>
+
+            <!-- Notificação Toast -->
+            <div id="toastMessage" class="mt-3 text-xs text-center font-medium min-h-[20px] text-slate-400">
+                <!-- Mensagem gerada pelo JS -->
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Rodapé -->
+    <footer class="p-3 text-center text-xs text-slate-500 border-t border-slate-900 bg-slate-950/90">
+        Roleta Deluxe Interativa • Sistema Dinâmico com Animações
+    </footer>
+
+    <script>
+        // Lista de nomes atualizada
+        let names = [
+            "Marcela", 
+            "Letícia", 
+            "Jessica", 
+            "Pither", 
+            "Cilena", 
+            "Zé Maria", 
+            "Bella", 
+            "Ketelen", 
+            "Emily", 
+            "Thiago", 
+            "Luiza", 
+            "Evelyn", 
+            "Ciley", 
+            "Lala", 
+            "Tita", 
+            "Robert"
+        ];
+
+        // Paleta de cores vibrantes para as fatias
+        const sliceColors = [
+            "#ec4899", // Rosa
+            "#8b5cf6", // Roxo
+            "#3b82f6", // Azul
+            "#f59e0b", // Âmbar
+            "#10b981", // Esmeralda
+            "#f43f5e", // Rosa Escuro
+            "#6366f1", // Índigo
+            "#14b8a6", // Verde Água
+            "#84cc16", // Lima
+            "#a855f7", // Violeta
+            "#06b6d4", // Ciano
+            "#d97706", // Laranja
+            "#e11d48", // Carmim
+            "#059669", // Verde
+            "#4f46e5", // Azul Real
+            "#7c3aed", // Roxo Escuro
+            "#db2777"  // Magenta
+        ];
+
+        let currentRound = 1;
+        let currentRotation = 0;
+        let isSpinning = false;
+
+        // Desenhar fatias SVG da roleta
+        function renderWheel() {
+            const svg = document.getElementById('wheelSvg');
+            svg.innerHTML = '';
+
+            const numSlices = names.length;
+
+            if (numSlices === 0) {
+                // Estado sem nomes
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("x", "50");
+                text.setAttribute("y", "50");
+                text.setAttribute("fill", "#64748b");
+                text.setAttribute("font-size", "4.5");
+                text.setAttribute("text-anchor", "middle");
+                text.textContent = "Adicione nomes!";
+                svg.appendChild(text);
+                return;
+            }
+
+            const sliceAngle = 360 / numSlices;
+
+            for (let i = 0; i < numSlices; i++) {
+                const startAngle = i * sliceAngle;
+                const endAngle = (i + 1) * sliceAngle;
+
+                // Coordenadas radiais para o arco da fatia
+                const x1 = 50 + 50 * Math.cos(Math.PI * (startAngle - 90) / 180);
+                const y1 = 50 + 50 * Math.sin(Math.PI * (startAngle - 90) / 180);
+                const x2 = 50 + 50 * Math.cos(Math.PI * (endAngle - 90) / 180);
+                const y2 = 50 + 50 * Math.sin(Math.PI * (endAngle - 90) / 180);
+
+                const pathData = `M 50 50 L ${x1} ${y1} A 50 50 0 0 1 ${x2} ${y2} Z`;
+
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+                // Forma da fatia
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", pathData);
+                path.setAttribute("fill", sliceColors[i % sliceColors.length]);
+                path.setAttribute("stroke", "#090d16");
+                path.setAttribute("stroke-width", "0.5");
+
+                // Texto da fatia
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                const textAngle = startAngle + sliceAngle / 2;
+                const textRad = Math.PI * (textAngle - 90) / 180;
+                const tx = 50 + 35 * Math.cos(textRad);
+                const ty = 50 + 35 * Math.sin(textRad);
+
+                text.setAttribute("x", tx);
+                text.setAttribute("y", ty);
+                text.setAttribute("fill", "#ffffff");
+                text.setAttribute("font-size", numSlices > 15 ? "2.5" : (numSlices > 10 ? "3.0" : "3.8"));
+                text.setAttribute("font-weight", "800");
+                text.setAttribute("text-anchor", "middle");
+                text.setAttribute("dominant-baseline", "central");
+                text.setAttribute("transform", `rotate(${textAngle + 90}, ${tx}, ${ty})`);
+                
+                // Encurtar nome se for demasiado longo
+                const displayName = names[i].length > 9 ? names[i].substring(0, 8) + '…' : names[i];
+                text.textContent = displayName;
+
+                g.appendChild(path);
+                g.appendChild(text);
+                svg.appendChild(g);
+            }
+        }
+
+        // Desenhar lista de nomes na UI
+        function renderNamesList() {
+            const namesList = document.getElementById('namesList');
+            namesList.innerHTML = '';
+
+            document.getElementById('nameCount').innerText = `${names.length} Nomes`;
+
+            names.forEach((name, idx) => {
+                const li = document.createElement('li');
+                li.className = "flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 transition hover:border-slate-700";
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = "font-medium truncate mr-2";
+                nameSpan.innerText = name;
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = "text-slate-500 hover:text-red-400 p-1 rounded-lg transition hover:bg-red-500/10";
+                deleteBtn.title = "Remover nome";
+                deleteBtn.onclick = () => removeName(idx);
+                deleteBtn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>`;
+
+                li.appendChild(nameSpan);
+                li.appendChild(deleteBtn);
+                namesList.appendChild(li);
+            });
+        }
+
+        // Adicionar novo nome
+        function addName() {
+            if (isSpinning) return;
+
+            const nameInput = document.getElementById('nameInput');
+            const newName = nameInput.value.trim();
+
+            if (!newName) {
+                showToast("Por favor, digite um nome!", "text-amber-400");
+                return;
+            }
+
+            names.push(newName);
+            nameInput.value = '';
+
+            renderWheel();
+            renderNamesList();
+            showToast(`"${newName}" foi adicionado à roleta!`, "text-emerald-400");
+        }
+
+        // Remover nome
+        function removeName(index) {
+            if (isSpinning) return;
+
+            if (names.length <= 2) {
+                showToast("A roleta precisa de pelo menos 2 nomes!", "text-amber-400");
+                return;
+            }
+
+            const removedName = names[index];
+            names.splice(index, 1);
+
+            renderWheel();
+            renderNamesList();
+            showToast(`"${removedName}" foi removido da roleta.`, "text-pink-400");
+        }
+
+        // Exibir notificação Toast
+        function showToast(msg, colorClass) {
+            const toast = document.getElementById('toastMessage');
+            toast.className = `mt-3 text-xs text-center font-medium min-h-[20px] ${colorClass}`;
+            toast.innerText = msg;
+
+            setTimeout(() => {
+                if (toast.innerText === msg) {
+                    toast.innerText = '';
+                }
+            }, 3000);
+        }
+
+        // Disparar animação de confetis ao vencer
+        function triggerWinnerAnimation() {
+            confetti({
+                particleCount: 80,
+                spread: 90,
+                origin: { y: 0.6, x: 0.3 }
+            });
+            confetti({
+                particleCount: 80,
+                spread: 90,
+                origin: { y: 0.6, x: 0.7 }
+            });
+        }
+
+        // Lógica de giro da roleta
+        function spinWheel() {
+            if (isSpinning) return;
+
+            if (names.length === 0) {
+                showToast("Adicione nomes antes de girar!", "text-amber-400");
+                return;
+            }
+
+            isSpinning = true;
+            const spinBtn = document.getElementById('spinBtn');
+            spinBtn.disabled = true;
+            spinBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            const resultCard = document.getElementById('resultCard');
+            resultCard.classList.remove('winner-card-anim', 'border-pink-500/80');
+
+            document.getElementById('statusLabel').innerText = "Girando a roleta...";
+            document.getElementById('resultText').innerText = "???";
+
+            const pointer = document.getElementById('pointer');
+            pointer.classList.add('pointer-animating');
+
+            // Definir o índice alvo de acordo com a nova regra
+            let targetIndex;
+            const leticiaIndex = names.findIndex(n => n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") === "leticia");
+            const cileyIndex = names.findIndex(n => n.toLowerCase().trim() === "ciley");
+
+            if (currentRound === 4 && leticiaIndex !== -1) {
+                // NA RODADA 4: OBRIGATÓRIO SER LETÍCIA
+                targetIndex = leticiaIndex;
+            } else if (currentRound === 5 && cileyIndex !== -1) {
+                // NA RODADA 5: OBRIGATÓRIO SER CILEY
+                targetIndex = cileyIndex;
+            } else {
+                // DEMAIS RODADAS: 100% ALEATÓRIO
+                targetIndex = Math.floor(Math.random() * names.length);
+            }
+
+            const numSlices = names.length;
+            const sliceAngle = 360 / numSlices;
+
+            // Calcular o ângulo exato de paragem
+            const targetSliceCenter = (targetIndex * sliceAngle) + (sliceAngle / 2);
+            const desiredAngleInCycle = (360 - targetSliceCenter) % 360;
+
+const fullSpins = 6 * 360; // 6 voltas completas
+const currentMod = currentRotation % 360;
+let angleToRotate = desiredAngleInCycle - currentMod;
+if (angleToRotate <= 0) {
+    angleToRotate += 360;
+}
+
+currentRotation += fullSpins + angleToRotate;
+
+// Aplicar transição de rotação no elemento
+const wheel = document.getElementById('wheel');
+wheel.style.transform = `rotate(${currentRotation}deg)`;
+
+// Quando a animação terminar (4.5 segundos)
+setTimeout(() => {
+    isSpinning = false;
+    pointer.classList.remove('pointer-animating');
+    
+    const winnerName = names[targetIndex];
+    document.getElementById('resultText').innerText = winnerName;
+    document.getElementById('statusLabel').innerText = `Vencedor da Rodada ${currentRound}:`;
+    
+    // Adicionar animação de brilho no cartão
+    resultCard.classList.add('winner-card-anim', 'border-pink-500/80');
+    
+    // Disparar confetis
+    triggerWinnerAnimation();
+    
+    // Avançar rodada
+    currentRound++;
+    document.getElementById('roundBadge').innerText = `Rodada ${currentRound}`;
+    
+    spinBtn.disabled = false;
+    spinBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+}, 4500);
+}
+
+// Reiniciar o jogo
+function resetGame() {
+    if (isSpinning) return;
+    currentRound = 1;
+    currentRotation = 0;
+    document.getElementById('wheel').style.transform = `rotate(0deg)`;
+    document.getElementById('roundBadge').innerText = `Rodada 1`;
+    document.getElementById('statusLabel').innerText = "Aguardando Giro";
+    document.getElementById('resultText').innerText = "- - -";
+    
+    const resultCard = document.getElementById('resultCard');
+    resultCard.classList.remove('winner-card-anim', 'border-pink-500/80');
+    showToast("Roleta e rodadas reiniciadas!", "text-purple-400");
+}
+
+// Inicializar ao carregar a página
+window.onload = function() {
+    renderWheel();
+    renderNamesList();
+};
+</script> <
+/body> <
+/html>
